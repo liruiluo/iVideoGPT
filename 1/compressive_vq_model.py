@@ -158,6 +158,7 @@ class CompressiveVQModel(ModelMixin, ConfigMixin):
                 for f in cond_features
             ]
         h = self.quant_conv(h)
+        
 
         # encode future frames conditioned on context
         d = self.cond_encoder(future_frames, cond_features)
@@ -175,9 +176,12 @@ class CompressiveVQModel(ModelMixin, ConfigMixin):
 
         # flatten into tokens
         indices_c = info[2].reshape(B, context_length, -1)
+        print(indices_c.shape)
         scf_token = self.num_vq_embeddings + self.num_dyn_embeddings
         scf_tokens = torch.ones(B, context_length, 1).to(indices_c.device, indices_c.dtype) * scf_token
         indices_c = torch.cat([scf_tokens, indices_c], dim=2).reshape(B, -1)[:, 1:]
+        print(scf_tokens.shape)
+        print(indices_c.shape)
 
         indices_d = info_d[2].reshape(B, future_length, -1) + self.num_vq_embeddings
         sdf_token = self.num_vq_embeddings + self.num_dyn_embeddings + 1
@@ -189,7 +193,7 @@ class CompressiveVQModel(ModelMixin, ConfigMixin):
             torch.ones(B, indices_c.shape[1] + 1).to(indices.device, indices.dtype) * -100,  # -100 for no loss
             indices_d[:, 1:]], dim=1)
 
-        return indices, labels
+        return indices
 
     @apply_forward_hook
     def detokenize(self, indices, context_length: int = 0):

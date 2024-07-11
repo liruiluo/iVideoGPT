@@ -9,9 +9,9 @@ from transformers import AutoModelForCausalLM
 
 from ivideogpt.vq_model import CompressiveVQModel
 from utils import NPZParser
-
+import time
 device = 'cuda'
-
+#0.1s f
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -27,12 +27,12 @@ def parse_args():
     parser.add_argument('--dataset_name', type=str, required=True, help="dataset name")
     parser.add_argument('--output_path', type=str, default='outputs', help="path to save predicted video")
 
-    parser.add_argument("--context_length", type=int, default=2, help="number of init context frames")
+    parser.add_argument("--context_length", type=int, default=2, help="number of init context frames") #2
     parser.add_argument("--segment_length", type=int, default=16,
                         help="number of frames in total, including context and future frames")
     parser.add_argument('--resolution', type=int, default=64, help="resolution of frames")
 
-    parser.add_argument('--repeat_times', default=5, type=int, help="number of times to repeat prediction")
+    parser.add_argument('--repeat_times', default=1, type=int, help="number of times to repeat prediction")
     parser.add_argument("--seed", type=int, default=0, help="random seed")
 
     args = parser.parse_args()
@@ -41,6 +41,8 @@ def parse_args():
 
 @torch.no_grad
 def predict(args, tokenizer, model, input):
+    t0 = time.time()
+    print(input.shape)
     # prepare inputs
     pixel_values = input.to(device, non_blocking=True).unsqueeze(0)
 
@@ -55,26 +57,35 @@ def predict(args, tokenizer, model, input):
         'top_k': 100,
         'max_new_tokens': max_new_tokens,
     }
+    # gen_kwargs = {
+    #     'do_sample': False,
+    #     'temperature': 0,
+    #     'top_k': 1,
+    #     'max_new_tokens': max_new_tokens,
+    # }
     generated_tokens = model.generate(
         gen_input.repeat(args.repeat_times, 1),
         **gen_kwargs,
         pad_token_id=50256,  # this is out of vocabulary but suppressing warning
     )
+    t1 = time.time()
 
     # generated_tokens will include gen_input
     recon_output = tokenizer.detokenize(generated_tokens, args.context_length)
     recon_output = recon_output.clamp(0.0, 1.0)
-
+    print(recon_output.shape)
+    t2 = time.time()
+    print(t1-t0,t2-t1)
     # save predicted video
-    save_path = args.output_path
-    os.makedirs(save_path, exist_ok=True)
-    for j in range(args.repeat_times):
-        gt_frames = [(pixel_values[0, i].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8)
-                     for i in range(pixel_values.shape[1])]
-        recon_frames = [(recon_output[j, i].permute(1, 2, 0).detach().cpu().numpy() *
-                        255).astype(np.uint8) for i in range(recon_output.shape[1])]
-        frames = [np.concatenate([gt_frames[i], recon_frames[i]], axis=1) for i in range(len(gt_frames))]
-        imageio.mimsave(f"{save_path}/pred-samples-{j}.gif", frames, fps=4, loop=0)
+    # save_path = args.output_path
+    # os.makedirs(save_path, exist_ok=True)
+    # for j in range(args.repeat_times):
+    #     gt_frames = [(pixel_values[0, i].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8)
+    #                  for i in range(pixel_values.shape[1])]
+    #     recon_frames = [(recon_output[j, i].permute(1, 2, 0).detach().cpu().numpy() *
+    #                     255).astype(np.uint8) for i in range(recon_output.shape[1])]
+    #     frames = [np.concatenate([gt_frames[i], recon_frames[i]], axis=1) for i in range(len(gt_frames))]
+    #     imageio.mimsave(f"{save_path}/pred-samples-{j}.gif", frames, fps=4, loop=0)
 
 
 def main():
@@ -94,6 +105,10 @@ def main():
     input = npz_parser.parse(args.input_path, args.dataset_name)
 
     predict(args, tokenizer, model, input)
+    predict(args, tokenizer, model, input)
+    predict(args, tokenizer, model, input)
+    predict(args, tokenizer, model, input)
+    
 
 
 if __name__ == "__main__":
